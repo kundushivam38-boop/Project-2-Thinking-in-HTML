@@ -80,7 +80,7 @@ No build steps or package installations (npm/node) required! The app runs direct
 
 Clone or download this repository:
 
-git clone https://kundushivam38-boop.github.io/Project-1-Thinking-in-HTML/
+git clone https://kundushivam38-boop.github.io/Project-2-Thinking-in-HTML/
 
 
 
@@ -94,7 +94,7 @@ Navigate to Pages on the left menu.
 
 Under Branch, select main and root /.
 
-Click Save. Your 3D app will be live at https://kundushivam38-boop.github.io/Project-1-Thinking-in-HTML/
+Click Save. Your 3D app will be live at https://kundushivam38-boop.github.io/Project-2-Thinking-in-HTML/
 
 📄 License
 

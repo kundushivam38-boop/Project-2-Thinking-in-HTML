@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI in Space Exploration: Aegis-IV Autonomous Mars Rover & Orbiter</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        orbitron: ['Orbitron', 'sans-serif'],
+                        rajdhani: ['Rajdhani', 'sans-serif'],
+                        mono: ['Share Tech Mono', 'monospace'],
+                    },
+                    colors: {
+                        cyber: {
+                            bg: '#030712',
+                            panel: 'rgba(10, 16, 31, 0.82)',
+                            border: 'rgba(0, 240, 255, 0.25)',
+                            cyan: '#00f0ff',
+                            purple: '#8a2be2',
+                            orange: '#ff6600',
+                            gold: '#ffd700',
+                            danger: '#ff2a6d',
+                            emerald: '#00ffaa'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #030712;
+            font-family: 'Rajdhani', sans-serif;
+            user-select: none;
+            color: #e2e8f0;
+        }
+
+        .glass-panel {
+            background: rgba(8, 14, 30, 0.85);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        .glass-panel-active {
+            border-color: rgba(0, 240, 255, 0.7);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+        }
+
+        .glow-text-cyan { text-shadow: 0 0 10px rgba(0, 240, 255, 0.7); }
+        .glow-text-orange { text-shadow: 0 0 10px rgba(255, 102, 0, 0.7); }
+        .glow-box-cyan { box-shadow: 0 0 18px rgba(0, 240, 255, 0.35); }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(5, 8, 20, 0.8); }
+        ::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.4); border-radius: 2px; }
+
+        /* Hotspots */
+        .hotspot-pin {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 25;
+            pointer-events: auto;
+        }
+
+        .hotspot-ring {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            border: 2px solid #00f0ff;
+            background: rgba(0, 240, 255, 0.25);
+            animation: pulse-ring 2s infinite;
+        }
+
+        .hotspot-pin:hover .hotspot-ring {
+            background: rgba(0, 240, 255, 0.7);
+            transform: scale(1.2);
+        }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(0, 240, 255, 0.8); }
+            70% { box-shadow: 0 0 0 14px rgba(0, 240, 255, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 240, 255, 0); }
+        }
+
+        /* Scanlines Overlay */
+        .hud-overlay {
+            pointer-events: none;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            background-size: 100% 3px, 6px 100%;
+        }
+
+        @keyframes radar-sweep {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .radar-sweeper {
+            animation: radar-sweep 3.5s linear infinite;
+        }
+
+        /* Custom Slider Range */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+            border-radius: 4px;
+            height: 6px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #00f0ff;
+            box-shadow: 0 0 10px #00f0ff;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="w-full h-screen overflow-hidden flex flex-col justify-between">
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
+
+    <!-- HUD Grid & Scanlines -->
+    <div class="hud-overlay absolute inset-0 w-full h-full z-10 opacity-60"></div>
+
+    <!-- 2D HTML Hotspots Overlay Layer -->
+    <div id="hotspot-container" class="absolute inset-0 z-20 pointer-events-none"></div>
+
+    <!-- TOP HEADER / MAIN HUD DIRECTORY -->
+    <header class="relative z-30 p-3 md:p-4 flex flex-wrap justify-between items-center gap-3 border-b border-cyber-border bg-gradient-to-r from-cyber-bg via-slate-950/80 to-cyber-bg">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-cyber-cyan/10 border border-cyber-cyan flex items-center justify-center glow-box-cyan">
+                <i class="fa-solid fa-brain text-cyber-cyan text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-orbitron text-lg md:text-2xl font-black tracking-wider text-white flex items-center gap-2">
+                    AEGIS-IV <span class="text-[10px] md:text-xs px-2 py-0.5 rounded bg-cyber-cyan/20 border border-cyber-cyan text-cyber-cyan font-mono">AUTONOMOUS MARS PROBE</span>
+                </h1>
+                <p class="text-[11px] text-slate-400 font-mono tracking-widest uppercase">Deep-Space Autonomous Systems • NASA / ESA Mission Architecture</p>
+            </div>
+        </div>
+
+        <!-- Mode Switches -->
+        <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-cyber-border">
+            <button id="btn-mode-explore" onclick="switchMode('explore')" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 bg-cyber-cyan text-slate-950 shadow-lg shadow-cyber-cyan/30">
+                <i class="fa-solid fa-compass"></i> 3D EXPLORER
+            </button>
+            <button id="btn-mode-xray" onclick="switchMode('xray')" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 text-slate-300 hover:text-white hover:bg-slate-800">
+                <i class="fa-solid fa-microchip"></i> X-RAY CORE
+            </button>
+            <button id="btn-mode-flight" onclick="switchMode('flight')" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 text-slate-300 hover:text-white hover:bg-slate-800">
+                <i class="fa-solid fa-gamepad"></i> FLIGHT SIM
+            </button>
+            <button id="btn-mode-knowledge" onclick="toggleKnowledgeHub(true)" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 text-cyber-gold hover:bg-cyber-gold/20 border border-cyber-gold/40">
+                <i class="fa-solid fa-book-bookmark"></i> KNOWLEDGE HUB
+            </button>
+        </div>
+
+        <!-- System Audio & View Reset -->
+        <div class="flex items-center space-x-2">
+            <button id="audio-toggle" onclick="toggleAudio()" class="w-9 h-9 rounded-lg glass-panel flex items-center justify-center text-slate-300 hover:text-cyber-cyan hover:border-cyber-cyan transition-colors" title="Audio Soundscapes">
+                <i id="audio-icon" class="fa-solid fa-volume-xmark"></i>
+            </button>
+            <button onclick="resetCamera()" class="w-9 h-9 rounded-lg glass-panel flex items-center justify-center text-slate-300 hover:text-cyber-cyan hover:border-cyber-cyan transition-colors" title="Reset Camera View">
+                <i class="fa-solid fa-arrows-to-dot"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN INTERACTIVE WORKSPACE -->
+    <main class="relative z-20 flex-1 flex justify-between p-3 md:p-4 pointer-events-none overflow-hidden">
+        
+        <!-- LEFT PANEL: Dynamic Telemetry & AI Information -->
+        <div id="left-panel" class="w-80 md:w-96 flex flex-col justify-between gap-3 pointer-events-auto transition-all duration-500 overflow-y-auto max-h-[85vh]">
+            
+            <!-- AI Active Module Status Card -->
+            <div class="glass-panel p-4 md:p-5 rounded-2xl flex flex-col gap-3">
+                <div class="flex justify-between items-center border-b border-slate-700/60 pb-2.5">
+                    <span class="font-orbitron text-xs text-cyber-cyan tracking-wider uppercase flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-cyber-cyan animate-ping"></span> Realtime AI Telemetry
+                    </span>
+                    <span class="text-[10px] font-mono text-slate-400">COMM DELAY: 18m 22s</span>
+                </div>
+
+                <div id="module-info">
+                    <h2 id="info-title" class="font-orbitron text-base md:text-lg font-bold text-white glow-text-cyan mb-1">Aegis-IV Spacecraft</h2>
+                    <p id="info-subtitle" class="text-xs text-cyber-cyan font-mono mb-2">Autonomous Exploration Architecture</p>
+                    <p id="info-desc" class="text-xs md:text-sm text-slate-300 leading-relaxed mb-3">
+                        Deep-space robotics rely on onboard Artificial Intelligence due to multi-minute light-speed communication delays. Aegis-IV deploys neural hazard detection, target identification, and energy management without human supervision.
+                    </p>
+                </div>
+
+                <!-- Dynamic Gauges -->
+                <div class="space-y-2 pt-2 border-t border-slate-800">
+                    <div>
+                        <div class="flex justify-between text-xs font-mono mb-1">
+                            <span class="text-slate-400">AI CONFIDENCE INDEX</span>
+                            <span id="metric-ai" class="text-cyber-cyan font-bold">99.4%</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                            <div id="bar-ai" class="h-full bg-cyber-cyan transition-all duration-500" style="width: 99.4%;"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs font-mono mb-1">
+                            <span class="text-slate-400">ONBOARD NEURAL LATENCY</span>
+                            <span id="metric-latency" class="text-cyber-emerald font-bold">0.12 ms</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                            <div id="bar-latency" class="h-full bg-cyber-emerald transition-all duration-500" style="width: 15%;"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs font-mono mb-1">
+                            <span class="text-slate-400">OPTICAL BUS BANDWIDTH</span>
+                            <span id="metric-bus" class="text-cyber-orange font-bold">94.8%</span>
+                        </div>
+                        <div class="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                            <div id="bar-bus" class="h-full bg-cyber-orange transition-all duration-500" style="width: 94.8%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI SIMULATION PARAMETER CONTROLS -->
+            <div id="sim-controls-panel" class="glass-panel p-4 rounded-2xl space-y-3">
+                <div class="flex justify-between items-center border-b border-slate-700/60 pb-2">
+                    <h3 class="font-orbitron text-xs font-bold text-white uppercase flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-cyber-cyan"></i> AI Simulation Parameters
+                    </h3>
+                    <span class="text-[10px] font-mono text-cyber-gold">LIVE ADJUST</span>
+                </div>
+
+                <!-- Slider 1: Sensitivity -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs font-mono">
+                        <span class="text-slate-400">AI Sensitivity Threshold</span>
+                        <span id="val-sensitivity" class="text-cyber-cyan font-bold">85%</span>
+                    </div>
+                    <input type="range" id="slider-sensitivity" min="10" max="100" value="85" class="w-full" oninput="updateSimParameters()">
+                </div>
+
+                <!-- Slider 2: Hazard Density -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs font-mono">
+                        <span class="text-slate-400">Terrain Hazard Density</span>
+                        <span id="val-hazards" class="text-cyber-orange font-bold">Medium (45)</span>
+                    </div>
+                    <input type="range" id="slider-hazards" min="10" max="100" value="45" class="w-full" oninput="updateSimParameters()">
+                </div>
+
+                <!-- Slider 3: Engine Thrust -->
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs font-mono">
+                        <span class="text-slate-400">Thruster Output</span>
+                        <span id="val-thrust" class="text-cyber-emerald font-bold">75%</span>
+                    </div>
+                    <input type="range" id="slider-thrust" min="20" max="100" value="75" class="w-full" oninput="updateSimParameters()">
+                </div>
+
+                <!-- Navigation Mode Selector -->
+                <div class="pt-1">
+                    <span class="text-[11px] font-mono text-slate-400 block mb-1">AUTONOMOUS NAV MODE</span>
+                    <div class="grid grid-cols-3 gap-1 text-[10px] font-mono">
+                        <button id="nav-mode-full" onclick="setNavMode('full')" class="p-1.5 rounded bg-cyber-cyan text-slate-950 font-bold border border-cyber-cyan">FULL AI</button>
+                        <button id="nav-mode-semi" onclick="setNavMode('semi')" class="p-1.5 rounded bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500">SEMI-AUTO</button>
+                        <button id="nav-mode-manual" onclick="setNavMode('manual')" class="p-1.5 rounded bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500">MANUAL</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL: Subsystem Nodes & Mini Hazard Scanner -->
+        <div id="right-panel" class="w-72 md:w-80 flex flex-col gap-3 pointer-events-auto transition-all duration-500">
+            
+            <div class="glass-panel p-4 rounded-2xl">
+                <h3 class="font-orbitron text-xs font-bold text-slate-300 tracking-wider uppercase mb-3 flex items-center justify-between">
+                    <span>Subsystem Modules</span>
+                    <i class="fa-solid fa-microchip text-cyber-cyan text-xs"></i>
+                </h3>
+                <div class="grid grid-cols-1 gap-1.5" id="subsystem-list">
+                    <!-- Dynamic Subsystem Buttons Injected via JS -->
+                </div>
+            </div>
+
+            <!-- Mini Hazard Radar Scanner -->
+            <div class="glass-panel p-4 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden">
+                <div class="text-[11px] font-mono text-slate-400 mb-2 w-full flex justify-between items-center">
+                    <span>AUTONOMOUS HAZARD MAP</span>
+                    <span class="text-cyber-cyan flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyber-cyan animate-ping"></span> RADAR</span>
+                </div>
+                <div class="w-32 h-32 rounded-full border border-cyber-cyan/40 relative flex items-center justify-center bg-slate-950/70 shadow-inner">
+                    <div class="w-24 h-24 rounded-full border border-slate-800 absolute"></div>
+                    <div class="w-16 h-16 rounded-full border border-slate-800/80 absolute"></div>
+                    <div class="w-8 h-8 rounded-full border border-slate-800 absolute"></div>
+                    <div class="w-full h-0.5 bg-slate-800/80 absolute"></div>
+                    <div class="h-full w-0.5 bg-slate-800/80 absolute"></div>
+                    <div class="w-16 h-16 absolute top-0 left-0 bg-gradient-to-br from-cyber-cyan/40 to-transparent origin-bottom-right radar-sweeper rounded-tl-full pointer-events-none"></div>
+                    
+                    <!-- Dynamic Simulated Blips -->
+                    <div id="radar-blip-1" class="w-2 h-2 rounded-full bg-cyber-orange absolute top-8 right-10 animate-pulse"></div>
+                    <div id="radar-blip-2" class="w-1.5 h-1.5 rounded-full bg-cyber-cyan absolute bottom-10 left-8"></div>
+                    <div id="radar-blip-3" class="w-2 h-2 rounded-full bg-cyber-emerald absolute top-12 left-12"></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- FLIGHT SIMULATOR BOTTOM HUD OVERLAY -->
+    <div id="flight-hud" class="absolute inset-x-0 bottom-6 z-30 px-6 flex flex-col md:flex-row justify-between items-end gap-4 pointer-events-none hidden transition-all duration-500">
+        <!-- Telemetry Controls -->
+        <div class="glass-panel p-4 rounded-2xl w-full md:w-80 pointer-events-auto space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-700/60 pb-2">
+                <span class="font-orbitron text-xs font-bold text-cyber-orange flex items-center gap-2">
+                    <i class="fa-solid fa-gamepad"></i> FLIGHT PILOT OVERRIDE
+                </span>
+                <span class="text-[10px] font-mono text-slate-400">AI ASSIST: ACTIVE</span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+                <div class="bg-slate-900/80 p-2 rounded border border-slate-800">
+                    <span class="text-slate-400 block text-[10px]">ALTITUDE</span>
+                    <span id="flight-alt" class="text-white text-base font-bold">3.2 m</span>
+                </div>
+                <div class="bg-slate-900/80 p-2 rounded border border-slate-800">
+                    <span class="text-slate-400 block text-[10px]">VELOCITY</span>
+                    <span id="flight-speed" class="text-cyber-cyan text-base font-bold">0.0 m/s</span>
+                </div>
+            </div>
+
+            <div class="space-y-1 text-xs">
+                <div class="flex justify-between font-mono text-slate-300">
+                    <span>THRUSTER ENERGY</span>
+                    <span id="flight-energy">100%</span>
+                </div>
+                <div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div id="bar-energy" class="h-full bg-gradient-to-r from-cyber-cyan to-cyber-purple w-full transition-all"></div>
+                </div>
+            </div>
+
+            <div class="text-[11px] text-slate-400 grid grid-cols-2 gap-1 pt-1 border-t border-slate-800/80 font-mono">
+                <div><span class="text-cyber-cyan font-bold">W / S</span> Pitch / Thrust</div>
+                <div><span class="text-cyber-cyan font-bold">A / D</span> Yaw / Steer</div>
+                <div><span class="text-cyber-cyan font-bold">SPACE</span> Ascend</div>
+                <div><span class="text-cyber-cyan font-bold">SHIFT</span> Descend</div>
+            </div>
+        </div>
+
+        <!-- Objective Target Bar -->
+        <div class="glass-panel p-4 rounded-2xl w-full md:w-96 pointer-events-auto flex items-center justify-between">
+            <div class="space-y-1">
+                <span class="text-[10px] font-mono text-cyber-cyan tracking-wider uppercase block">AI TARGET WAYPOINT</span>
+                <h4 id="objective-title" class="font-orbitron text-sm font-bold text-white">ANCIENT RIVERBED SAMPLE ROCK</h4>
+                <p id="objective-dist" class="text-xs text-slate-300 font-mono">Distance: <span class="text-cyber-orange font-bold">42.8 m</span></p>
+            </div>
+            <button onclick="triggerAIAutopilot()" class="px-3.5 py-2 bg-cyber-cyan/20 border border-cyber-cyan hover:bg-cyber-cyan hover:text-slate-950 text-cyber-cyan text-xs font-orbitron font-bold rounded-xl transition-all glow-box-cyan">
+                ENGAGE AI PILOT
+            </button>
+        </div>
+    </div>
+
+    <!-- EDUCATIONAL MODAL POPUP (Hotspot Details) -->
+    <div id="modal-popup" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md hidden transition-all">
+        <div class="glass-panel-active glass-panel max-w-xl w-full rounded-2xl p-6 relative flex flex-col gap-4 border border-cyber-cyan shadow-2xl">
+            <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex items-center space-x-3 border-b border-slate-800 pb-3">
+                <div id="modal-icon-bg" class="w-12 h-12 rounded-xl bg-cyber-cyan/20 border border-cyber-cyan flex items-center justify-center text-cyber-cyan text-2xl">
+                    <i id="modal-icon" class="fa-solid fa-microchip"></i>
+                </div>
+                <div>
+                    <h3 id="modal-title" class="font-orbitron text-xl font-bold text-white">Subsystem Name</h3>
+                    <p id="modal-category" class="text-xs text-cyber-cyan font-mono uppercase tracking-widest">AI Module Category</p>
+                </div>
+            </div>
+            <div class="space-y-3 text-sm text-slate-300 leading-relaxed">
+                <p id="modal-desc">Detailed subsystem description...</p>
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <h4 class="font-orbitron text-xs text-cyber-gold font-bold uppercase flex items-center gap-2">
+                        <i class="fa-solid fa-code-branch"></i> Core AI Algorithm
+                    </h4>
+                    <p id="modal-algo" class="text-xs font-mono text-slate-300">Neural network algorithm details...</p>
+                </div>
+                <div class="bg-slate-900/90 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                    <h4 class="font-orbitron text-xs text-cyber-cyan font-bold uppercase flex items-center gap-2">
+                        <i class="fa-solid fa-shuttle-space"></i> Real-World Space Missions
+                    </h4>
+                    <p id="modal-mission" class="text-xs text-slate-300">Mission application context...</p>
+                </div>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button onclick="closeModal()" class="px-5 py-2 bg-cyber-cyan text-slate-950 font-orbitron font-bold text-xs rounded-xl hover:bg-white transition-all">
+                    CLOSE TELEMETRY
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KNOWLEDGE HUB MODAL -->
+    <div id="knowledge-hub-modal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md hidden transition-all">
+        <div class="glass-panel max-w-3xl w-full rounded-2xl p-6 relative flex flex-col gap-4 border border-cyber-gold shadow-2xl max-h-[90vh] overflow-y-auto">
+            <button onclick="toggleKnowledgeHub(false)" class="absolute top-4 right-4 text-slate-400 hover:text-white text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex items-center space-x-3 border-b border-slate-800 pb-3">
+                <i class="fa-solid fa-book-bookmark text-cyber-gold text-2xl"></i>
+                <div>
+                    <h3 class="font-orbitron text-xl font-bold text-white">AI in Space Exploration Knowledge Hub</h3>
+                    <p class="text-xs text-cyber-gold font-mono uppercase tracking-widest">Educational & Technological Deep Dive</p>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                    <h4 class="font-orbitron text-sm font-bold text-cyber-cyan flex items-center gap-2">
+                        <i class="fa-solid fa-route"></i> 1. Autonomous Navigation (AutoNav)
+                    </h4>
+                    <p class="text-slate-300 leading-relaxed">
+                        Rovers on Mars like NASA's <i>Perseverance</i> use onboard AI stereo vision to continuously process 3D terrain maps while driving. It detects sharp boulders, deep sand traps, and cliffs, planning dynamic safe pathways without waiting for Earth operators.
+                    </p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                    <h4 class="font-orbitron text-sm font-bold text-cyber-orange flex items-center gap-2">
+                        <i class="fa-solid fa-bullseye"></i> 2. AEGIS Target Selection
+                    </h4>
+                    <p class="text-slate-300 leading-relaxed">
+                        <b>AEGIS</b> (Autonomous Exploration for Gathering Increased Science) uses computer vision and machine learning on rover laser spectrometers to scan rocks, identify unique chemical signatures, and fire science lasers automatically.
+                    </p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                    <h4 class="font-orbitron text-sm font-bold text-cyber-emerald flex items-center gap-2">
+                        <i class="fa-solid fa-heart-pulse"></i> 3. Fault Detection & Diagnostics
+                    </h4>
+                    <p class="text-slate-300 leading-relaxed">
+                        Deep space probes use machine learning anomaly detection to monitor voltage spikes, wheel degradation, and thruster temp fluctuations. Self-healing software routes power away from faulty circuits before catastrophic failures occur.
+                    </p>
+                </div>
+
+                <div class="bg-slate-900/80 p-4 rounded-xl border border-slate-800 space-y-2">
+                    <h4 class="font-orbitron text-sm font-bold text-cyber-purple flex items-center gap-2">
+                        <i class="fa-solid fa-wifi"></i> 4. Deep Space Neural Comms
+                    </h4>
+                    <p class="text-slate-300 leading-relaxed">
+                        AI neural image compression models filter out redundant background space noise and compress high-resolution scientific data up to 100x before transmission over long-distance Deep Space Network links.
+                    </p>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2 border-t border-slate-800">
+                <button onclick="toggleKnowledgeHub(false)" class="px-5 py-2 bg-cyber-gold text-slate-950 font-orbitron font-bold text-xs rounded-xl hover:bg-white transition-all">
+                    RETURN TO SIMULATOR
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BOTTOM FOOTER SYSTEM HUD -->
+    <footer class="relative z-30 px-4 py-2 border-t border-cyber-border/50 bg-slate-950/90 text-[11px] font-mono text-slate-400 flex flex-wrap justify-between items-center">
+        <div class="flex items-center space-x-4">
+            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-cyber-emerald"></span> THREE.JS WEBGL ENGINE</span>
+            <span class="hidden md:inline text-slate-600">|</span>
+            <span class="hidden md:inline text-slate-400">SENSOR FUSION: OPTICAL + LIDAR</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <span class="text-slate-400">MARS GRAVITY: <span class="text-slate-200">3.721 m/s²</span></span>
+            <span class="text-slate-600">|</span>
+            <span class="text-cyber-cyan">A.I. CORE v4.9.0</span>
+        </div>
+    </footer>
+
+    <!-- MAIN JAVASCRIPT LOGIC -->
+    <script>
+        /* =========================================================================
+           GLOBAL STATE & DETAILED SUBSYSTEM DATA
+           ========================================================================= */
+        const state = {
+            mode: 'explore', // 'explore', 'xray', 'flight'
+            activeModule: 'overview',
+            audioEnabled: false,
+            navMode: 'full', // 'full', 'semi', 'manual'
+            simParams: {
+                sensitivity: 85,
+                hazards: 45,
+                thrust: 75
+            },
+            cameraTargetPos: { x: 0, y: 1.5, z: 6 },
+            cameraLookAt: { x: 0, y: 0.5, z: 0 },
+            
+            flight: {
+                pos: { x: 0, y: 2, z: 0 },
+                rot: { x: 0, y: 0, z: 0 },
+                speed: 0,
+                energy: 100,
+                targetPos: { x: 22, y: 1.2, z: -30 },
+                aiAutopilot: false
+            }
+        };
+
+        const subsystems = {
+            overview: {
+                id: 'overview',
+                title: 'Aegis-IV Spacecraft',
+                subtitle: 'Autonomous Deep Space Exploration Probe',
+                desc: 'The Aegis-IV represents the pinnacle of autonomous deep-space probes. Designed for long-duration Martian planetary missions without real-time human control.',
+                camera: { x: 0, y: 2, z: 6 },
+                lookAt: { x: 0, y: 0.5, z: 0 },
+                aiIndex: '99.4%',
+                latency: '0.12 ms',
+                bus: '94.8%',
+                worldPos: { x: 0, y: 1.2, z: 0 },
+                icon: 'fa-shuttle-space',
+                category: 'Spacecraft Architecture',
+                algo: 'Multi-threaded Executive System Architecture',
+                mission: 'Perseverance Rover, Curiosity, Voyager Probes'
+            },
+            npu: {
+                id: 'npu',
+                title: 'Neuromorphic Optical AI Core',
+                subtitle: 'Quad-Core Optical Neuromorphic Processor',
+                desc: 'Processes up to 150 trillion ops/sec for instant dynamic path calculation, computer vision hazard filtering, and real-time decision trees.',
+                camera: { x: 0, y: 1.2, z: 2.2 },
+                lookAt: { x: 0, y: 0.8, z: 0 },
+                aiIndex: '99.9%',
+                latency: '0.04 ms',
+                bus: '99.2%',
+                worldPos: { x: 0, y: 0.8, z: 0.2 },
+                icon: 'fa-brain',
+                category: 'Onboard Computing',
+                algo: 'Spiking Neural Networks (SNN) & Convolutional Vision Filters',
+                mission: 'NASA JPL High-Performance Space Computing (HPSC)'
+            },
+            nav: {
+                id: 'nav',
+                title: 'Autonomous Navigation (AutoNav LiDAR)',
+                subtitle: 'Stereo Vision & Hazard Avoidance LiDAR',
+                desc: 'Simultaneously maps surrounding 3D terrain, computes cliff/boulder risk vectors, and reroutes around hazards at speeds up to 10x faster than traditional rovers.',
+                camera: { x: 0, y: 1.8, z: 2.5 },
+                lookAt: { x: 0, y: 1.4, z: 0.8 },
+                aiIndex: '98.7%',
+                latency: '0.18 ms',
+                bus: '92.1%',
+                worldPos: { x: 0, y: 2.4, z: 1.0 },
+                icon: 'fa-eye',
+                category: 'Perception & Vision',
+                algo: 'SLAM (Simultaneous Localization and Mapping) & Pathfinding A*',
+                mission: 'NASA Perseverance AutoNav Suite'
+            },
+            science: {
+                id: 'science',
+                title: 'AEGIS Target Analyzer (ChemCam)',
+                subtitle: 'Autonomous Laser Spectroscopy',
+                desc: 'Scans target geological formations with an UV laser spectrometer. Onboard ML models identify mineral composition and select science targets independently.',
+                camera: { x: 0.6, y: 1.6, z: 2.0 },
+                lookAt: { x: 0.3, y: 1.2, z: 0.5 },
+                aiIndex: '97.5%',
+                latency: '0.25 ms',
+                bus: '89.4%',
+                worldPos: { x: 0, y: 2.3, z: 1.8 },
+                icon: 'fa-bullseye',
+                category: 'Scientific AI Instrumentation',
+                algo: 'AEGIS (Autonomous Exploration for Gathering Increased Science)',
+                mission: 'MSL Curiosity ChemCam & SuperCam'
+            },
+            comm: {
+                id: 'comm',
+                title: 'High-Gain Deep Space Antenna Array',
+                subtitle: 'Adaptive Beamforming High-Gain Dish',
+                desc: 'Uses AI neural beamforming to track Earth orbital nodes dynamically and neural data compression algorithms to optimize raw bandwidth.',
+                camera: { x: -1.5, y: 2.5, z: 2.5 },
+                lookAt: { x: -0.5, y: 1.8, z: -0.2 },
+                aiIndex: '96.2%',
+                latency: '0.50 ms',
+                bus: '91.0%',
+                worldPos: { x: -0.8, y: 1.8, z: -0.8 },
+                icon: 'fa-wifi',
+                category: 'Deep Space Communications',
+                algo: 'Deep Learning Autoencoders for Lossless Data Compression',
+                mission: 'Deep Space Network (DSN) & Mars Reconnaissance Orbiter'
+            },
+            power: {
+                id: 'power',
+                title: 'Next-Gen RTG Thermoelectric Core',
+                subtitle: 'Radioisotope Thermoelectric Generator',
+                desc: 'Provides reliable electrical power and thermal heat. AI dynamic power routing directs wattage to high-priority sensors or compute cores during intense operational tasks.',
+                camera: { x: 0, y: 1.2, z: -2.5 },
+                lookAt: { x: 0, y: 0.8, z: -0.8 },
+                aiIndex: '99.1%',
+                latency: '0.08 ms',
+                bus: '96.5%',
+                worldPos: { x: 0, y: 0.8, z: -1.0 },
+                icon: 'fa-bolt',
+                category: 'Power Management',
+                algo: 'Predictive Load Management & Adaptive Thermal Regulators',
+                mission: 'Cassini, New Horizons, Perseverance MMRTG'
+            }
+        };
+
+        /* =========================================================================
+           THREE.JS RENDERER & SCENE SETUP
+           ========================================================================= */
+        let scene, camera, renderer, controls;
+        let roverGroup, hullMesh, internalGroup, terrainMesh, waypointsMesh, scannerLinesGroup;
+        let npuCoreMesh, laserBeamMesh, planetEarth, planetJupiter;
+        let clock = new THREE.Clock();
+        let keyState = {};
+
+        let audioCtx, thrusterOsc, thrusterGain;
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x030712, 0.02);
+
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(state.cameraTargetPos.x, state.cameraTargetPos.y, state.cameraTargetPos.z);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            container.appendChild(renderer.domElement);
+
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxPolarAngle = Math.PI / 2 + 0.05;
+            controls.minDistance = 1.5;
+            controls.maxDistance = 35;
+
+            setupLighting();
+            createStarfieldAndPlanets();
+            createMartianTerrain();
+            createSpacecraftModel();
+            createHotspots2D();
+            renderSubsystemButtons();
+
+            window.addEventListener('resize', onWindowResize);
+            window.addEventListener('keydown', (e) => { keyState[e.code] = true; });
+            window.addEventListener('keyup', (e) => { keyState[e.code] = false; });
+
+            animate();
+        }
+
+        /* =========================================================================
+           LIGHTING & ENVIRONMENT
+           ========================================================================= */
+        function setupLighting() {
+            const ambient = new THREE.AmbientLight(0x1a243b, 1.4);
+            scene.add(ambient);
+
+            const sunLight = new THREE.DirectionalLight(0xffa575, 2.5);
+            sunLight.position.set(25, 35, 20);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 100;
+            scene.add(sunLight);
+
+            const cyanRim = new THREE.DirectionalLight(0x00f0ff, 1.8);
+            cyanRim.position.set(-25, 10, -20);
+            scene.add(cyanRim);
+        }
+
+        function createStarfieldAndPlanets() {
+            // Starfield
+            const count = 3000;
+            const geo = new THREE.BufferGeometry();
+            const pos = new Float32Array(count * 3);
+            for (let i = 0; i < count * 3; i += 3) {
+                pos[i] = (Math.random() - 0.5) * 400;
+                pos[i + 1] = Math.random() * 200;
+                pos[i + 2] = (Math.random() - 0.5) * 400;
+            }
+            geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            const starMat = new THREE.PointsMaterial({ size: 0.7, color: 0xffffff, transparent: true, opacity: 0.8 });
+            scene.add(new THREE.Points(geo, starMat));
+
+            // Planet Earth in sky
+            const earthGeo = new THREE.SphereGeometry(3, 32, 32);
+            const earthMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.4 });
+            planetEarth = new THREE.Mesh(earthGeo, earthMat);
+            planetEarth.position.set(-80, 50, -120);
+            scene.add(planetEarth);
+
+            // Planet Jupiter in sky
+            const jupGeo = new THREE.SphereGeometry(6, 32, 32);
+            const jupMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.6 });
+            planetJupiter = new THREE.Mesh(jupGeo, jupMat);
+            planetJupiter.position.set(100, 60, -150);
+            scene.add(planetJupiter);
+        }
+
+        function createMartianTerrain() {
+            const size = 140;
+            const geo = new THREE.PlaneGeometry(size, size, 90, 90);
+            geo.rotateX(-Math.PI / 2);
+
+            const pos = geo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                const x = pos.getX(i);
+                const z = pos.getZ(i);
+                const dist = Math.sqrt(x * x + z * z);
+                if (dist > 6) {
+                    const elevation = Math.sin(x * 0.08) * Math.cos(z * 0.08) * 2.0 + Math.sin(x * 0.04 + z * 0.04) * 3.0;
+                    pos.setY(i, elevation - 1.2);
+                } else {
+                    pos.setY(i, -1.2);
+                }
+            }
+            geo.computeVertexNormals();
+
+            const mat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.95 });
+            terrainMesh = new THREE.Mesh(geo, mat);
+            terrainMesh.receiveShadow = true;
+            scene.add(terrainMesh);
+
+            // Boulders
+            const rockGeo = new THREE.DodecahedronGeometry(0.8, 1);
+            const rockMat = new THREE.MeshStandardMaterial({ color: 0x652311, roughness: 0.9 });
+            for (let i = 0; i < 50; i++) {
+                const rock = new THREE.Mesh(rockGeo, rockMat);
+                const rx = (Math.random() - 0.5) * 90;
+                const rz = (Math.random() - 0.5) * 90;
+                if (Math.sqrt(rx * rx + rz * rz) > 6) {
+                    rock.position.set(rx, -0.8, rz);
+                    const sc = 0.5 + Math.random() * 2.0;
+                    rock.scale.set(sc, sc * 0.6, sc);
+                    rock.castShadow = true;
+                    scene.add(rock);
+                }
+            }
+
+            // Target Waypoint Mesh Beam
+            const wpGeo = new THREE.CylinderGeometry(0.1, 2.0, 35, 16, 1, true);
+            const wpMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff, transparent: true, opacity: 0.35, wireframe: true });
+            waypointsMesh = new THREE.Mesh(wpGeo, wpMat);
+            waypointsMesh.position.set(state.flight.targetPos.x, 17.5, state.flight.targetPos.z);
+            scene.add(waypointsMesh);
+        }
+
+        /* =========================================================================
+           SPACECRAFT MODEL CREATION
+           ========================================================================= */
+        function createSpacecraftModel() {
+            roverGroup = new THREE.Group();
+
+            // Main Hull
+            const bodyGeo = new THREE.BoxGeometry(2.4, 1.0, 3.4);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.2 });
+            hullMesh = new THREE.Mesh(bodyGeo, bodyMat);
+            hullMesh.position.y = 0.9;
+            hullMesh.castShadow = true;
+            roverGroup.add(hullMesh);
+
+            // Solar Array
+            const solarGeo = new THREE.BoxGeometry(2.2, 0.05, 3.0);
+            const solarMat = new THREE.MeshStandardMaterial({ color: 0xca8a04, metalness: 0.9, roughness: 0.1 });
+            const solar = new THREE.Mesh(solarGeo, solarMat);
+            solar.position.set(0, 1.43, 0);
+            roverGroup.add(solar);
+
+            // Internal Components (X-Ray Mode)
+            internalGroup = new THREE.Group();
+            internalGroup.visible = false;
+
+            const npuGeo = new THREE.BoxGeometry(0.7, 0.5, 0.7);
+            const npuMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00f0ff, emissiveIntensity: 0.9, wireframe: true });
+            npuCoreMesh = new THREE.Mesh(npuGeo, npuMat);
+            npuCoreMesh.position.set(0, 0.9, 0.2);
+            internalGroup.add(npuCoreMesh);
+
+            const rtgGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.9, 16);
+            const rtgMat = new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff3300, emissiveIntensity: 0.6 });
+            const rtg = new THREE.Mesh(rtgGeo, rtgMat);
+            rtg.rotation.x = Math.PI / 2;
+            rtg.position.set(0, 0.9, -1.0);
+            internalGroup.add(rtg);
+
+            roverGroup.add(internalGroup);
+
+            // Mast Head & Laser
+            const mastGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.3);
+            const mastMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8 });
+            const mast = new THREE.Mesh(mastGeo, mastMat);
+            mast.position.set(0, 1.9, 1.1);
+            roverGroup.add(mast);
+
+            const headGeo = new THREE.BoxGeometry(0.6, 0.35, 0.45);
+            const headMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.9 });
+            const mastHead = new THREE.Mesh(headGeo, headMat);
+            mastHead.position.set(0, 2.5, 1.1);
+
+            const lensGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.1, 16);
+            const lensMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, emissive: 0x00f0ff, emissiveIntensity: 0.7 });
+            const lensL = new THREE.Mesh(lensGeo, lensMat);
+            lensL.rotation.x = Math.PI / 2;
+            lensL.position.set(-0.18, 0, 0.23);
+            mastHead.add(lensL);
+
+            const lensR = lensL.clone();
+            lensR.position.set(0.18, 0, 0.23);
+            mastHead.add(lensR);
+
+            roverGroup.add(mastHead);
+
+            // Laser Beam
+            const beamGeo = new THREE.CylinderGeometry(0.01, 0.06, 4);
+            const beamMat = new THREE.MeshBasicMaterial({ color: 0xff0055, transparent: true, opacity: 0.0 });
+            laserBeamMesh = new THREE.Mesh(beamGeo, beamMat);
+            laserBeamMesh.rotation.x = Math.PI / 2.3;
+            laserBeamMesh.position.set(0, 2.4, 2.8);
+            roverGroup.add(laserBeamMesh);
+
+            // Antenna Dish
+            const dishGeo = new THREE.CylinderGeometry(0.65, 0.1, 0.15, 24);
+            const dishMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, metalness: 0.6 });
+            const dish = new THREE.Mesh(dishGeo, dishMat);
+            dish.position.set(-0.85, 1.9, -0.85);
+            dish.rotation.z = -Math.PI / 5;
+            roverGroup.add(dish);
+
+            // Wheels
+            const wheelGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.28, 24);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.9 });
+            const wheelPositions = [
+                [-1.4, 0.32, 1.3], [1.4, 0.32, 1.3],
+                [-1.5, 0.32, 0.0], [1.5, 0.32, 0.0],
+                [-1.4, 0.32, -1.3], [1.4, 0.32, -1.3]
+            ];
+
+            wheelPositions.forEach(p => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.rotation.z = Math.PI / 2;
+                w.position.set(p[0], p[1], p[2]);
+                w.castShadow = true;
+                roverGroup.add(w);
+            });
+
+            scene.add(roverGroup);
+        }
+
+        /* =========================================================================
+           2D HOTSPOTS OVERLAY SYSTEM
+           ========================================================================= */
+        function createHotspots2D() {
+            const container = document.getElementById('hotspot-container');
+            container.innerHTML = '';
+
+            Object.keys(subsystems).forEach(key => {
+                if (key === 'overview') return;
+                const sub = subsystems[key];
+
+                const pin = document.createElement('div');
+                pin.className = 'hotspot-pin';
+                pin.id = `hotspot-${key}`;
+                pin.onclick = () => openModal(key);
+
+                pin.innerHTML = `
+                    <div class="hotspot-ring flex items-center justify-center">
+                        <i class="fa-solid ${sub.icon} text-[10px] text-cyber-cyan"></i>
+                    </div>
+                `;
+
+                container.appendChild(pin);
+            });
+        }
+
+        function updateHotspotPositions() {
+            if (state.mode === 'flight') {
+                document.getElementById('hotspot-container').style.display = 'none';
+                return;
+            } else {
+                document.getElementById('hotspot-container').style.display = 'block';
+            }
+
+            Object.keys(subsystems).forEach(key => {
+                if (key === 'overview') return;
+                const sub = subsystems[key];
+                const pin = document.getElementById(`hotspot-${key}`);
+                if (!pin) return;
+
+                const wp = new THREE.Vector3(sub.worldPos.x, sub.worldPos.y, sub.worldPos.z);
+                wp.applyMatrix4(roverGroup.matrixWorld);
+                wp.project(camera);
+
+                const x = (wp.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(wp.y * 0.5) + 0.5) * window.innerHeight;
+
+                if (wp.z < 1) {
+                    pin.style.left = `${x}px`;
+                    pin.style.top = `${y}px`;
+                    pin.style.display = 'block';
+                } else {
+                    pin.style.display = 'none';
+                }
+            });
+        }
+
+        /* =========================================================================
+           SUBSYSTEM SELECTOR & MODAL DIALOGS
+           ========================================================================= */
+        function renderSubsystemButtons() {
+            const container = document.getElementById('subsystem-list');
+            container.innerHTML = '';
+
+            Object.keys(subsystems).forEach(key => {
+                const sub = subsystems[key];
+                const active = state.activeModule === key;
+
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left p-2 rounded-xl text-xs font-mono transition-all flex items-center justify-between border ${
+                    active 
+                    ? 'bg-cyber-cyan/15 border-cyber-cyan text-white shadow-lg shadow-cyber-cyan/20' 
+                    : 'bg-slate-900/70 border-slate-800 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                }`;
+                btn.onclick = () => selectSubsystem(key);
+
+                btn.innerHTML = `
+                    <span class="flex items-center gap-2">
+                        <i class="fa-solid ${sub.icon} ${active ? 'text-cyber-cyan' : 'text-slate-500'}"></i>
+                        ${sub.title}
+                    </span>
+                    <i class="fa-solid fa-chevron-right text-[10px] opacity-50"></i>
+                `;
+
+                container.appendChild(btn);
+            });
+        }
+
+        function selectSubsystem(key) {
+            state.activeModule = key;
+            const sub = subsystems[key];
+
+            state.cameraTargetPos = sub.camera;
+            state.cameraLookAt = sub.lookAt;
+
+            document.getElementById('info-title').innerText = sub.title;
+            document.getElementById('info-subtitle').innerText = sub.subtitle;
+            document.getElementById('info-desc').innerText = sub.desc;
+
+            document.getElementById('metric-ai').innerText = sub.aiIndex;
+            document.getElementById('bar-ai').style.width = sub.aiIndex;
+
+            document.getElementById('metric-latency').innerText = sub.latency;
+            
+            document.getElementById('metric-bus').innerText = sub.bus;
+            document.getElementById('bar-bus').style.width = sub.bus;
+
+            if (key === 'science' && laserBeamMesh) {
+                laserBeamMesh.material.opacity = 0.85;
+                setTimeout(() => { laserBeamMesh.material.opacity = 0; }, 1600);
+            }
+
+            renderSubsystemButtons();
+            playBeepSound();
+        }
+
+        function openModal(key) {
+            const sub = subsystems[key];
+            if (!sub) return;
+
+            document.getElementById('modal-title').innerText = sub.title;
+            document.getElementById('modal-category').innerText = sub.category;
+            document.getElementById('modal-desc').innerText = sub.desc;
+            document.getElementById('modal-algo').innerText = sub.algo;
+            document.getElementById('modal-mission').innerText = sub.mission;
+            document.getElementById('modal-icon').className = `fa-solid ${sub.icon}`;
+
+            document.getElementById('modal-popup').classList.remove('hidden');
+            playBeepSound();
+        }
+
+        function closeModal() {
+            document.getElementById('modal-popup').classList.add('hidden');
+            playBeepSound();
+        }
+
+        function toggleKnowledgeHub(show) {
+            const modal = document.getElementById('knowledge-hub-modal');
+            if (show) modal.classList.remove('hidden');
+            else modal.classList.add('hidden');
+            playBeepSound();
+        }
+
+        /* =========================================================================
+           SIMULATION CONTROLS & NAVIGATION MODES
+           ========================================================================= */
+        function updateSimParameters() {
+            state.simParams.sensitivity = document.getElementById('slider-sensitivity').value;
+            state.simParams.hazards = document.getElementById('slider-hazards').value;
+            state.simParams.thrust = document.getElementById('slider-thrust').value;
+
+            document.getElementById('val-sensitivity').innerText = `${state.simParams.sensitivity}%`;
+            
+            const hz = state.simParams.hazards;
+            let hzLabel = hz < 35 ? "Low" : (hz < 70 ? "Medium" : "High");
+            document.getElementById('val-hazards').innerText = `${hzLabel} (${hz})`;
+            
+            document.getElementById('val-thrust').innerText = `${state.simParams.thrust}%`;
+
+            // Dynamic updates to telemetry latency
+            const lat = (0.05 + (100 - state.simParams.sensitivity) * 0.003).toFixed(2);
+            document.getElementById('metric-latency').innerText = `${lat} ms`;
+        }
+
+        function setNavMode(mode) {
+            state.navMode = mode;
+            ['full', 'semi', 'manual'].forEach(m => {
+                const btn = document.getElementById(`nav-mode-${m}`);
+                if (m === mode) {
+                    btn.className = "p-1.5 rounded bg-cyber-cyan text-slate-950 font-bold border border-cyber-cyan";
+                } else {
+                    btn.className = "p-1.5 rounded bg-slate-900 text-slate-300 border border-slate-700 hover:border-slate-500";
+                }
+            });
+            playBeepSound();
+        }
+
+        function switchMode(newMode) {
+            state.mode = newMode;
+
+            ['explore', 'xray', 'flight'].forEach(m => {
+                const btn = document.getElementById(`btn-mode-${m}`);
+                if (m === newMode) {
+                    btn.className = "px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 bg-cyber-cyan text-slate-950 shadow-lg shadow-cyber-cyan/30";
+                } else {
+                    btn.className = "px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-orbitron text-xs font-bold tracking-wider transition-all flex items-center gap-2 text-slate-300 hover:text-white hover:bg-slate-800";
+                }
+            });
+
+            const leftPanel = document.getElementById('left-panel');
+            const rightPanel = document.getElementById('right-panel');
+            const flightHud = document.getElementById('flight-hud');
+
+            if (newMode === 'explore') {
+                leftPanel.classList.remove('hidden');
+                rightPanel.classList.remove('hidden');
+                flightHud.classList.add('hidden');
+                
+                hullMesh.material.opacity = 1.0;
+                hullMesh.material.transparent = false;
+                internalGroup.visible = false;
+                controls.enabled = true;
+                selectSubsystem('overview');
+
+            } else if (newMode === 'xray') {
+                leftPanel.classList.remove('hidden');
+                rightPanel.classList.remove('hidden');
+                flightHud.classList.add('hidden');
+
+                hullMesh.material.transparent = true;
+                hullMesh.material.opacity = 0.2;
+                internalGroup.visible = true;
+                controls.enabled = true;
+                selectSubsystem('npu');
+
+            } else if (newMode === 'flight') {
+                leftPanel.classList.add('hidden');
+                rightPanel.classList.add('hidden');
+                flightHud.classList.remove('hidden');
+
+                hullMesh.material.opacity = 1.0;
+                hullMesh.material.transparent = false;
+                internalGroup.visible = false;
+                controls.enabled = false;
+                
+                state.flight.pos = { x: 0, y: 3, z: 0 };
+                roverGroup.position.set(0, 3, 0);
+            }
+
+            playBeepSound();
+        }
+
+        /* =========================================================================
+           FLIGHT SIMULATOR LOGIC
+           ========================================================================= */
+        function updateFlightSim(delta) {
+            if (state.mode !== 'flight') return;
+
+            const f = state.flight;
+            const thrustFactor = (state.simParams.thrust / 100) * 10;
+            const speedStep = thrustFactor * delta;
+            const rotStep = 2.2 * delta;
+
+            let thrusting = false;
+
+            if (f.aiAutopilot) {
+                const dx = f.targetPos.x - f.pos.x;
+                const dz = f.targetPos.z - f.pos.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+
+                if (dist > 1.2) {
+                    f.pos.x += (dx / dist) * 7 * delta;
+                    f.pos.z += (dz / dist) * 7 * delta;
+                    f.rot.y = Math.atan2(dx, dz);
+                    thrusting = true;
+                } else {
+                    f.aiAutopilot = false;
+                    document.getElementById('objective-title').innerText = "WAYPOINT REACHED - SAMPLE ISOLATED";
+                }
+            } else {
+                if (keyState['KeyA'] || keyState['ArrowLeft']) f.rot.y += rotStep;
+                if (keyState['KeyD'] || keyState['ArrowRight']) f.rot.y -= rotStep;
+
+                if (keyState['KeyW'] || keyState['ArrowUp']) {
+                    f.pos.x += Math.sin(f.rot.y) * speedStep;
+                    f.pos.z += Math.cos(f.rot.y) * speedStep;
+                    thrusting = true;
+                }
+                if (keyState['KeyS'] || keyState['ArrowDown']) {
+                    f.pos.x -= Math.sin(f.rot.y) * (speedStep * 0.5);
+                    f.pos.z -= Math.cos(f.rot.y) * (speedStep * 0.5);
+                    thrusting = true;
+                }
+
+                if (keyState['Space']) {
+                    f.pos.y = Math.min(f.pos.y + speedStep, 22);
+                    thrusting = true;
+                }
+                if (keyState['ShiftLeft'] || keyState['ShiftRight']) {
+                    f.pos.y = Math.max(f.pos.y - speedStep, 0.8);
+                    thrusting = true;
+                }
+            }
+
+            roverGroup.position.set(f.pos.x, f.pos.y, f.pos.z);
+            roverGroup.rotation.y = f.rot.y;
+
+            if (thrusting) {
+                f.energy = Math.max(f.energy - delta * 4, 0);
+            } else {
+                f.energy = Math.min(f.energy + delta * 6, 100);
+            }
+
+            const camOffset = new THREE.Vector3(
+                f.pos.x - Math.sin(f.rot.y) * 8.5,
+                f.pos.y + 3.8,
+                f.pos.z - Math.cos(f.rot.y) * 8.5
+            );
+            camera.position.lerp(camOffset, 0.1);
+            camera.lookAt(f.pos.x, f.pos.y + 0.5, f.pos.z);
+
+            document.getElementById('flight-alt').innerText = `${f.pos.y.toFixed(1)} m`;
+            document.getElementById('flight-speed').innerText = `${(thrusting ? thrustFactor : 0).toFixed(1)} m/s`;
+            document.getElementById('flight-energy').innerText = `${Math.round(f.energy)}%`;
+            document.getElementById('bar-energy').style.width = `${f.energy}%`;
+
+            const objDist = Math.sqrt(
+                Math.pow(f.targetPos.x - f.pos.x, 2) + 
+                Math.pow(f.targetPos.z - f.pos.z, 2)
+            );
+            document.getElementById('objective-dist').innerHTML = `Distance: <span class="text-cyber-orange font-bold">${objDist.toFixed(1)} m</span>`;
+        }
+
+        function triggerAIAutopilot() {
+            state.flight.aiAutopilot = true;
+            document.getElementById('objective-title').innerText = "AI AUTOPILOT ENGAGED";
+            playBeepSound();
+        }
+
+        /* =========================================================================
+           WEB AUDIO API - SYNTHESIZED SOUND EFFECTS
+           ========================================================================= */
+        function initAudio() {
+            if (audioCtx) return;
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            audioCtx = new AudioContext();
+        }
+
+        function toggleAudio() {
+            state.audioEnabled = !state.audioEnabled;
+            const icon = document.getElementById('audio-icon');
+
+            if (state.audioEnabled) {
+                initAudio();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                icon.className = "fa-solid fa-volume-high text-cyber-cyan";
+            } else {
+                icon.className = "fa-solid fa-volume-xmark";
+            }
+        }
+
+        function playBeepSound() {
+            if (!state.audioEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(450, audioCtx.currentTime + 0.07);
+
+            gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.07);
+
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.07);
+        }
+
+        /* =========================================================================
+           CAMERA RESET & ANIMATION LOOP
+           ========================================================================= */
+        function resetCamera() {
+            selectSubsystem('overview');
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            if (state.mode !== 'flight') {
+                camera.position.lerp(new THREE.Vector3(state.cameraTargetPos.x, state.cameraTargetPos.y, state.cameraTargetPos.z), 0.05);
+                controls.target.lerp(new THREE.Vector3(state.cameraLookAt.x, state.cameraLookAt.y, state.cameraLookAt.z), 0.05);
+                controls.update();
+
+                roverGroup.position.y = Math.sin(clock.getElapsedTime() * 1.5) * 0.03;
+                updateHotspotPositions();
+            } else {
+                updateFlightSim(delta);
+            }
+
+            if (npuCoreMesh) {
+                npuCoreMesh.rotation.x += 0.01;
+                npuCoreMesh.rotation.y += 0.015;
+            }
+
+            if (planetEarth) planetEarth.rotation.y += 0.002;
+            if (planetJupiter) planetJupiter.rotation.y += 0.001;
+
+            if (waypointsMesh) waypointsMesh.rotation.y += 0.01;
+
+            renderer.render(scene, camera);
+        }
+
+        window.onload = () => {
+            initThree();
+        };
+    </script>
+</body>
+</html>
